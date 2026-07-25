@@ -1,6 +1,15 @@
+'use client';
+
 import { motion } from "framer-motion";
 
-const TREE = [
+interface OrgNodeData {
+  id: string;
+  name: string;
+  title: string;
+  children: OrgNodeData[];
+}
+
+const TREE: OrgNodeData[] = [
   {
     id: "root",
     name: "Grand-Grand-Grand-Grandfather",
@@ -32,10 +41,8 @@ function UserIcon({ className }: { className?: string }) {
 
 function OrgNode({
   data,
-  isRoot = false,
 }: {
-  data: { id: string; name: string; title: string; children: any[] };
-  isRoot?: boolean;
+  data: OrgNodeData;
 }) {
   const hasChildren = data.children.length > 0;
 
@@ -121,7 +128,7 @@ export default function Home() {
           Organization
         </h1>
         <div className="mt-12 flex justify-center">
-          <OrgNode data={TREE[0]} isRoot />
+          <OrgNode data={TREE[0]} />
         </div>
       </section>
     </main>
