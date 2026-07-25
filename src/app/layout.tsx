@@ -13,7 +13,6 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Animated DotGrid Landing",
   description: "Modern animated landing page with dot-grid background",
 };
 
