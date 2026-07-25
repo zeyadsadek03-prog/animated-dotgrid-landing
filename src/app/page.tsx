@@ -1,6 +1,6 @@
 export default function Home() {
   return (
-    <main className="relative min-h-screen bg-black dot-grid" />
+    <main className="relative min-h-screen dot-grid" />
   );
 }
  

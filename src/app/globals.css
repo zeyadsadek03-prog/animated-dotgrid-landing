@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --color-background: #0a0a0f;
-  --color-foreground: #f4f4f5;
+  --color-background: #ffffff;
+  --color-foreground: #0a0a0f;
 }
 
 .dark {
@@ -18,7 +18,7 @@ body {
 
 /* Dot grid background */
 .dot-grid {
-  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+  background-image: radial-gradient(circle, rgba(0, 0, 0, 0.25) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 
