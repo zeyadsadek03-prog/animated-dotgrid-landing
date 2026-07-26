@@ -17,6 +17,30 @@ const PAN_BOUND_X = 480;
 const PAN_BOUND_Y = 360;
 const FIT_MARGIN = 24; // px breathing room around the tree when auto-fitting
 
+// Below this viewport width we render the indented accordion instead of the
+// spatial zoom/pan tree.
+const MOBILE_MAX_WIDTH = 640;
+
+/**
+ * Media-query hook (matchMedia). Returns whether `query` currently matches and
+ * stays in sync via the change event. SSR-safe: defaults to false on the server
+ * and reconciles on mount.
+ */
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = React.useState(false);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mql = window.matchMedia(query);
+    const update = () => setMatches(mql.matches);
+    update();
+    mql.addEventListener('change', update);
+    return () => mql.removeEventListener('change', update);
+  }, [query]);
+
+  return matches;
+}
+
 function UserIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -233,6 +257,96 @@ function OrgTreeNode({
   );
 }
 
+/**
+ * Mobile accordion node. Renders the SAME OrgNode data and reads/writes the
+ * SAME shared `expanded` Set as the desktop tree, so per-node collapse state is
+ * consistent across both layouts. Compact tappable row: dashed avatar + blue
+ * name pill; children indent under the parent and fade in place on expand.
+ */
+function OrgAccordionNode({
+  data,
+  depth,
+  expanded,
+  onToggle,
+}: {
+  data: OrgNode;
+  depth: number;
+  expanded: Set<string>;
+  onToggle: (id: string) => void;
+}) {
+  const hasChildren = data.children.length > 0;
+  const isOpen = expanded.has(data.id);
+
+  return (
+    <div className="flex flex-col">
+      <button
+        type="button"
+        onClick={() => hasChildren && onToggle(data.id)}
+        style={{ paddingLeft: depth * 20 }}
+        className={`flex w-full items-center gap-3 py-2 text-left ${
+          hasChildren ? 'cursor-pointer' : 'cursor-default'
+        }`}
+        aria-label={`${data.name}${
+          hasChildren ? (isOpen ? ', tap to collapse' : ', tap to expand') : ''
+        }`}
+        aria-expanded={hasChildren ? isOpen : undefined}
+      >
+        {/* caret / spacer keeps rows aligned */}
+        <span className="w-4 shrink-0 text-blue-600">
+          {hasChildren && (
+            <motion.svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              className="h-4 w-4"
+              animate={{ rotate: isOpen ? 90 : 0 }}
+              transition={{ duration: 0.2 }}
+              aria-hidden="true"
+            >
+              <path d="M9 6l6 6-6 6" />
+            </motion.svg>
+          )}
+        </span>
+
+        {/* dashed avatar (compact) */}
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-blue-500 bg-white">
+          <UserIcon className="h-5 w-5 text-blue-600" />
+        </span>
+
+        {/* blue name pill */}
+        <span className="rounded-full bg-blue-600 px-4 py-1.5">
+          <span className="text-sm font-extrabold uppercase tracking-wide text-white">
+            {data.name}
+          </span>
+        </span>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {hasChildren && isOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            {data.children.map((child) => (
+              <OrgAccordionNode
+                key={child.id}
+                data={child}
+                depth={depth + 1}
+                expanded={expanded}
+                onToggle={onToggle}
+              />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 const clampValue = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
@@ -247,6 +361,9 @@ export default function Home() {
       return next;
     });
   }, []);
+
+  // Narrow viewport -> indented accordion; wide -> spatial zoom/pan tree.
+  const isMobile = useMediaQuery(`(max-width: ${MOBILE_MAX_WIDTH}px)`);
 
   // Shared pan offset: drives BOTH the chart translate and the dot-grid
   // background-position, so dots shift with the drag but never change size.
@@ -304,6 +421,9 @@ export default function Home() {
   const expandedKey = Array.from(expanded).sort().join(',');
 
   React.useEffect(() => {
+    // Auto-fit only applies to the spatial tree (desktop/tablet).
+    if (isMobile) return;
+
     const fitOptions = { duration: 0.55, ease: 'easeInOut' as const };
 
     if (!rootOpen) {
@@ -333,8 +453,37 @@ export default function Home() {
     return () => cancelAnimationFrame(raf);
     // Re-run whenever the set of expanded nodes changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rootOpen, expandedKey]);
+  }, [rootOpen, expandedKey, isMobile]);
 
+  // --- MOBILE: indented collapsible accordion -------------------------------
+  // Native vertical scroll, readable size, no zoom/pan. Reads the SAME
+  // ORG_TREE + shared `expanded` Set as the desktop tree.
+  if (isMobile) {
+    return (
+      <main className="relative min-h-screen overflow-x-hidden">
+        {/* Fixed dot-grid layer: constant dot size/spacing, never scales. */}
+        <div
+          aria-hidden="true"
+          className="dot-grid pointer-events-none fixed inset-0"
+        />
+        <section className="relative px-4 py-10">
+          <h1 className="text-center text-2xl font-bold tracking-tight text-zinc-900">
+            Organization
+          </h1>
+          <div className="mx-auto mt-8 max-w-md">
+            <OrgAccordionNode
+              data={ORG_TREE}
+              depth={0}
+              expanded={expanded}
+              onToggle={toggle}
+            />
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  // --- DESKTOP / TABLET: spatial zoom/pan tree (unchanged behavior) ---------
   return (
     <motion.main
       className="relative min-h-screen overflow-hidden touch-none cursor-grab active:cursor-grabbing"
