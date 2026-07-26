@@ -4,6 +4,7 @@ import React from 'react';
 import {
   motion,
   AnimatePresence,
+  LayoutGroup,
   useMotionValue,
   useMotionTemplate,
   animate,
@@ -512,13 +513,23 @@ export default function Home() {
         </h1>
         <div className="mt-12 flex justify-center">
           <div ref={chartRef} className="w-max min-w-max">
-            <OrgTreeNode
-              data={ORG_TREE}
-              expanded={expanded}
-              onToggle={toggle}
-              registerNode={registerNode}
-            />
-          </div>
+              {/* LayoutGroup gives the WHOLE recursive tree (every node, every
+                  children-row and its connector) a single shared layout-animation
+                  context. Without it, collapsing a subtree removes nested nodes
+                  whose size change never propagates up to the parent row's
+                  reflow, so sibling cells + the connector snap in one frame on
+                  collapse. With it, the parent row's `layout` cells and the
+                  rAF-tracked connector interpolate the collapse gradually — same
+                  as expand. Camera (scale/panX/panY) is untouched. */}
+              <LayoutGroup>
+                <OrgTreeNode
+                  data={ORG_TREE}
+                  expanded={expanded}
+                  onToggle={toggle}
+                  registerNode={registerNode}
+                />
+              </LayoutGroup>
+            </div>
         </div>
       </motion.section>
     </motion.main>
