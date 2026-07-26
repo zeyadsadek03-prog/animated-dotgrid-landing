@@ -75,9 +75,11 @@ function OrgNode({
           <p className="text-sm font-extrabold uppercase tracking-wide text-white">
             {data.name}
           </p>
-          <p className="text-xs font-medium lowercase text-white/80">
-            {data.title}
-          </p>
+          {!isRoot && (
+            <p className="text-xs font-medium lowercase text-white/80">
+              {data.title}
+            </p>
+          )}
         </div>
       </motion.div>
 
