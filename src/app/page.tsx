@@ -84,18 +84,28 @@ function OrgTreeNode({
     centers: number[];
   } | null>(null);
 
-  // Measure the children row + each child cell in LAYOUT coordinates
-  // (offsetLeft/offsetWidth are unaffected by the stage's scale transform).
+  // Measure the children row + each child cell.
+  //
+  // Centers are read from getBoundingClientRect (which DOES reflect Framer
+  // Motion's layout transforms) and normalized by the row's live scale factor
+  // (k = layoutWidth / rectWidth) so they are exact ROW-local coordinates even
+  // while the zoom/pan camera is scaled. Crucially, when a descendant expands
+  // and this row REFLOWS, the sibling cells glide via `layout` transforms —
+  // offsetLeft/offsetWidth would jump straight to the final value, so instead
+  // we run a short requestAnimationFrame loop (kicked off by the ResizeObserver
+  // that fires the instant layout changes) that re-measures every frame for the
+  // animation window. This keeps the unified connector path IN SYNC with the
+  // gliding nodes: the bar extends/retracts and the drops track each child
+  // smoothly, never snapping to the final geometry mid-animation.
   React.useLayoutEffect(() => {
     if (!isOpen || !hasChildren) return;
 
-    const measure = () => {
+    let rafId = 0;
+    let trackUntil = 0;
+
+    const apply = () => {
       const row = rowRef.current;
       if (!row) return;
-      // Sub-pixel measurement: getBoundingClientRect gives fractional
-      // positions; normalize by the row's current scale factor (rect width
-      // vs layout width) so centers are exact ROW-local layout coordinates
-      // even while the zoom/pan stage is scaled.
       const rowRect = row.getBoundingClientRect();
       const layoutWidth = row.offsetWidth;
       const k = rowRect.width > 0 ? layoutWidth / rowRect.width : 1;
@@ -112,7 +122,7 @@ function OrgTreeNode({
           prev &&
           prev.width === next.width &&
           prev.centers.length === next.centers.length &&
-          prev.centers.every((c, i) => c === next.centers[i])
+          prev.centers.every((c, i) => Math.abs(c - next.centers[i]) < 0.01)
         ) {
           return prev;
         }
@@ -120,13 +130,33 @@ function OrgTreeNode({
       });
     };
 
-    measure();
-    const observer = new ResizeObserver(measure);
+    const tick = () => {
+      apply();
+      if (performance.now() < trackUntil) {
+        rafId = requestAnimationFrame(tick);
+      } else {
+        rafId = 0;
+      }
+    };
+
+    // A layout change (row/cell size shift) fires the ResizeObserver at the
+    // START of the reflow; we then track for the animation window so the
+    // connector follows the gliding cells frame-by-frame instead of snapping.
+    const startTracking = () => {
+      trackUntil = performance.now() + 550;
+      if (!rafId) rafId = requestAnimationFrame(tick);
+    };
+
+    apply();
+    const observer = new ResizeObserver(startTracking);
     if (rowRef.current) observer.observe(rowRef.current);
     cellRefs.current.slice(0, data.children.length).forEach((cell) => {
       if (cell) observer.observe(cell);
     });
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (rafId) cancelAnimationFrame(rafId);
+    };
   }, [isOpen, hasChildren, data.children.length]);
 
   // Single unified connector path: parent drop, then the horizontal bar
@@ -154,9 +184,13 @@ function OrgTreeNode({
       className="flex flex-col items-center"
     >
       <motion.div
+        layout="position"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.35 }}
+        transition={{
+          opacity: { duration: 0.35 },
+          layout: { duration: 0.4, ease: 'easeInOut' },
+        }}
         className="flex flex-col items-center"
       >
         <button
@@ -230,7 +264,9 @@ function OrgTreeNode({
               className="grid grid-flow-col auto-cols-fr items-start justify-center w-max min-w-max"
             >
               {data.children.map((child, i) => (
-                <div
+                <motion.div
+                  layout
+                  transition={{ layout: { duration: 0.4, ease: 'easeInOut' } }}
                   key={child.id}
                   ref={(el) => {
                     cellRefs.current[i] = el;
@@ -250,7 +286,7 @@ function OrgTreeNode({
                       registerNode={registerNode}
                     />
                   </motion.div>
-                </div>
+                </motion.div>
               ))}
             </div>
           </motion.div>
