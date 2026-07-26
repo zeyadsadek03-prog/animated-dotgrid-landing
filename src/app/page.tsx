@@ -75,17 +75,22 @@ function OrgTreeNode({
     const measure = () => {
       const row = rowRef.current;
       if (!row) return;
-      // offsetLeft is relative to the offsetParent, which may sit far above
-      // the row — subtract the row's own offsetLeft (same offsetParent) so
-      // centers are in the ROW's local coordinate space.
-      const rowLeft = row.offsetLeft;
+      // Sub-pixel measurement: getBoundingClientRect gives fractional
+      // positions; normalize by the row's current scale factor (rect width
+      // vs layout width) so centers are exact ROW-local layout coordinates
+      // even while the zoom/pan stage is scaled.
+      const rowRect = row.getBoundingClientRect();
+      const layoutWidth = row.offsetWidth;
+      const k = rowRect.width > 0 ? layoutWidth / rowRect.width : 1;
       const centers = cellRefs.current
         .slice(0, data.children.length)
-        .map((cell) =>
-          cell ? cell.offsetLeft - rowLeft + cell.offsetWidth / 2 : 0,
-        );
+        .map((cell) => {
+          if (!cell) return 0;
+          const r = cell.getBoundingClientRect();
+          return (r.left - rowRect.left + r.width / 2) * k;
+        });
       setGeo((prev) => {
-        const next = { width: row.offsetWidth, centers };
+        const next = { width: layoutWidth, centers };
         if (
           prev &&
           prev.width === next.width &&
