@@ -246,7 +246,6 @@ function OrgTreeNode({
       </motion.div>
 
       <AnimatePresence
-        mode="popLayout"
         onExitComplete={() => onCollapseComplete(data.id)}
       >
         {hasChildren && isOpen && (
@@ -599,3 +598,4 @@ export default function Home() {
     </motion.main>
   );
 }
+
