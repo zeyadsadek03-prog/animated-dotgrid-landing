@@ -248,7 +248,6 @@ export default function Home() {
   const onPointerDown = React.useCallback(
     (e: React.PointerEvent) => {
       pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
       movedRef.current = false;
 
       if (pointers.current.size === 1) {
@@ -283,6 +282,7 @@ export default function Home() {
         }
         movedRef.current = true;
         setDragging(true);
+        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
         return;
       }
 
@@ -293,6 +293,7 @@ export default function Home() {
       if (!movedRef.current) {
         movedRef.current = true;
         setDragging(true);
+        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
       }
       const p = clampPan(
         panStart.current.x + dx,
