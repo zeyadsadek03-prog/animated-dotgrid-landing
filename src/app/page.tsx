@@ -33,13 +33,20 @@ function UserIcon({ className }: { className?: string }) {
   );
 }
 
+// Connector geometry (px, in the row's local/untransformed coordinate space).
+const DROP_TOP = 32; // vertical drop from the parent down to the bar
+const DROP_CHILD = 28; // short vertical drop from the bar into each child
+const CONNECTOR_H = DROP_TOP + DROP_CHILD;
+
 /**
  * Recursive top-down tidy tree node.
  * Connector grammar: vertical drop from parent -> horizontal distributed bar
  * across the children row -> short vertical drop into EACH child.
- * The horizontal bar is built from per-child half segments (first child gets
- * the right half, last child the left half, middle children the full width),
- * which scales to any number of children at any depth.
+ * The whole connector for a children row is ONE measured SVG path (parent
+ * drop + bar + every child drop) drawn with a single pathLength animation,
+ * so it renders as one coherent stroke. Child x-centers are measured from
+ * layout (offsetLeft/offsetWidth — immune to the zoom transform) and kept
+ * fresh with a ResizeObserver, so drops always land exactly on each child.
  */
 function OrgTreeNode({
   data,
@@ -52,6 +59,64 @@ function OrgTreeNode({
 }) {
   const hasChildren = data.children.length > 0;
   const isOpen = expanded.has(data.id);
+
+  const rowRef = React.useRef<HTMLDivElement>(null);
+  const cellRefs = React.useRef<(HTMLDivElement | null)[]>([]);
+  const [geo, setGeo] = React.useState<{
+    width: number;
+    centers: number[];
+  } | null>(null);
+
+  // Measure the children row + each child cell in LAYOUT coordinates
+  // (offsetLeft/offsetWidth are unaffected by the stage's scale transform).
+  React.useLayoutEffect(() => {
+    if (!isOpen || !hasChildren) return;
+
+    const measure = () => {
+      const row = rowRef.current;
+      if (!row) return;
+      const centers = cellRefs.current
+        .slice(0, data.children.length)
+        .map((cell) => (cell ? cell.offsetLeft + cell.offsetWidth / 2 : 0));
+      setGeo((prev) => {
+        const next = { width: row.offsetWidth, centers };
+        if (
+          prev &&
+          prev.width === next.width &&
+          prev.centers.length === next.centers.length &&
+          prev.centers.every((c, i) => c === next.centers[i])
+        ) {
+          return prev;
+        }
+        return next;
+      });
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (rowRef.current) observer.observe(rowRef.current);
+    cellRefs.current.slice(0, data.children.length).forEach((cell) => {
+      if (cell) observer.observe(cell);
+    });
+    return () => observer.disconnect();
+  }, [isOpen, hasChildren, data.children.length]);
+
+  // Single unified connector path: parent drop, then the horizontal bar
+  // (first child center -> last child center), then a drop into EACH child.
+  const connectorPath = React.useMemo(() => {
+    if (!geo || geo.centers.length === 0) return '';
+    const cx = geo.width / 2;
+    if (geo.centers.length === 1) {
+      const c = geo.centers[0];
+      return `M ${cx} 0 V ${DROP_TOP} M ${c} ${DROP_TOP} V ${CONNECTOR_H}`;
+    }
+    const first = geo.centers[0];
+    const last = geo.centers[geo.centers.length - 1];
+    const drops = geo.centers
+      .map((c) => `M ${c} ${DROP_TOP} V ${CONNECTOR_H}`)
+      .join(' ');
+    return `M ${cx} 0 V ${DROP_TOP} M ${first} ${DROP_TOP} H ${last} ${drops}`;
+  }, [geo]);
 
   return (
     <div className="flex flex-col items-center">
@@ -93,89 +158,60 @@ function OrgTreeNode({
             transition={{ duration: 0.35 }}
             className="mt-8 flex flex-col items-center"
           >
-            {/* 1. vertical drop descending from the parent node */}
-            <svg
+            {/* Connector canvas: the parent drop + horizontal bar + every
+                child drop live in ONE <path>, drawn with a single pathLength
+                animation so the whole connector appears as one coherent
+                stroke — no fragmented segments, no arrowheads. */}
+            <div
               aria-hidden="true"
-              className="block overflow-visible"
-              width="2"
-              height="32"
-              viewBox="0 0 2 32"
+              className="relative w-full"
+              style={{ height: CONNECTOR_H }}
             >
-              <motion.line
-                x1="1"
-                y1="0"
-                x2="1"
-                y2="32"
-                stroke="#2563eb"
-                strokeWidth="2"
-                strokeLinecap="round"
-                initial={{ pathLength: 0 }}
-                animate={{ pathLength: 1 }}
-                transition={{ duration: 0.4, ease: 'easeInOut' }}
-              />
-            </svg>
+              {geo && connectorPath && (
+                <svg
+                  className="absolute left-0 top-0 overflow-visible"
+                  width={geo.width}
+                  height={CONNECTOR_H}
+                  viewBox={`0 0 ${geo.width} ${CONNECTOR_H}`}
+                >
+                  <motion.path
+                    d={connectorPath}
+                    fill="none"
+                    stroke="#2563eb"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    initial={{ pathLength: 0 }}
+                    animate={{ pathLength: 1 }}
+                    transition={{ duration: 0.7, ease: 'easeInOut' }}
+                  />
+                </svg>
+              )}
+            </div>
 
             {/* children row: NEVER wraps (flex-nowrap + w-max) so 3-across
                 stays 3-across on mobile — no 2+1 wrap. */}
-            <div className="flex flex-nowrap items-start justify-center w-max min-w-max">
-              {data.children.map((child, i) => {
-                const isFirst = i === 0;
-                const isLast = i === data.children.length - 1;
-                const single = data.children.length === 1;
-                return (
-                  <div
-                    key={child.id}
-                    className="relative flex min-w-[140px] flex-col items-center px-5"
+            <div
+              ref={rowRef}
+              className="flex flex-nowrap items-start justify-center w-max min-w-max"
+            >
+              {data.children.map((child, i) => (
+                <div
+                  key={child.id}
+                  ref={(el) => {
+                    cellRefs.current[i] = el;
+                  }}
+                  className="relative flex min-w-[140px] flex-col items-center px-5"
+                >
+                  {/* Fade in PLACE: opacity only, no translate/y motion. */}
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.45, delay: 0.55 + i * 0.08 }}
                   >
-                    {/* 2. horizontal bar segment (skipped for a single child) */}
-                    {!single && (
-                      <motion.div
-                        aria-hidden="true"
-                        className={`absolute top-0 h-[2px] rounded-full bg-blue-600 ${
-                          isFirst
-                            ? 'left-1/2 right-0 origin-left'
-                            : isLast
-                              ? 'left-0 right-1/2 origin-right'
-                              : 'inset-x-0 origin-center'
-                        }`}
-                        initial={{ scaleX: 0 }}
-                        animate={{ scaleX: 1 }}
-                        transition={{ duration: 0.35, delay: 0.4, ease: 'easeInOut' }}
-                      />
-                    )}
-
-                    {/* 3. short vertical drop from the bar into EACH child */}
-                    <svg
-                      aria-hidden="true"
-                      className="block overflow-visible"
-                      width="2"
-                      height="28"
-                      viewBox="0 0 2 28"
-                    >
-                      <motion.line
-                        x1="1"
-                        y1="0"
-                        x2="1"
-                        y2="28"
-                        stroke="#2563eb"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        initial={{ pathLength: 0 }}
-                        animate={{ pathLength: 1 }}
-                        transition={{ duration: 0.35, delay: 0.7, ease: 'easeInOut' }}
-                      />
-                    </svg>
-
-                    <motion.div
-                      initial={{ opacity: 0, y: 12 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.45, delay: 1.0 + i * 0.08 }}
-                    >
-                      <OrgTreeNode data={child} expanded={expanded} onToggle={onToggle} />
-                    </motion.div>
-                  </div>
-                );
-              })}
+                    <OrgTreeNode data={child} expanded={expanded} onToggle={onToggle} />
+                  </motion.div>
+                </div>
+              ))}
             </div>
           </motion.div>
         )}
