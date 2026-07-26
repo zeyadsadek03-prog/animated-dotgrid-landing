@@ -52,8 +52,8 @@ function OrgNode({
   return (
     <div className="flex flex-col items-center">
       <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
         transition={{ duration: 0.35 }}
         className="flex flex-col items-center"
       >
