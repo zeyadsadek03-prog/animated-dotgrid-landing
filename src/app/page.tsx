@@ -6,20 +6,17 @@ import { motion, AnimatePresence } from 'framer-motion';
 interface OrgNodeData {
   id: string;
   name: string;
-  title: string;
   children: OrgNodeData[];
 }
 
 const TREE: OrgNodeData[] = [
   {
     id: 'root',
-    name: 'Grand-Grand-Grand-Grandfather',
-    title: 'chief patriarch',
+    name: 'Idris',
     children: [
-      { id: 'c1', name: 'Uncle Alpha', title: 'operations', children: [] },
-      { id: 'c2', name: 'Aunt Beta', title: 'strategy', children: [] },
-      { id: 'c3', name: 'Cousin Gamma', title: 'finance', children: [] },
-      { id: 'c4', name: 'Cousin Delta', title: 'people', children: [] },
+      { id: 'c1', name: 'Osama', children: [] },
+      { id: 'c2', name: 'Nessrin', children: [] },
+      { id: 'c3', name: 'Mohamed', children: [] },
     ],
   },
 ];
@@ -75,11 +72,6 @@ function OrgNode({
           <p className="text-sm font-extrabold uppercase tracking-wide text-white">
             {data.name}
           </p>
-          {!isRoot && (
-            <p className="text-xs font-medium lowercase text-white/80">
-              {data.title}
-            </p>
-          )}
         </div>
       </motion.div>
 
