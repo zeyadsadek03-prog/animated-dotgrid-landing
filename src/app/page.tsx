@@ -75,9 +75,15 @@ function OrgTreeNode({
     const measure = () => {
       const row = rowRef.current;
       if (!row) return;
+      // offsetLeft is relative to the offsetParent, which may sit far above
+      // the row — subtract the row's own offsetLeft (same offsetParent) so
+      // centers are in the ROW's local coordinate space.
+      const rowLeft = row.offsetLeft;
       const centers = cellRefs.current
         .slice(0, data.children.length)
-        .map((cell) => (cell ? cell.offsetLeft + cell.offsetWidth / 2 : 0));
+        .map((cell) =>
+          cell ? cell.offsetLeft - rowLeft + cell.offsetWidth / 2 : 0,
+        );
       setGeo((prev) => {
         const next = { width: row.offsetWidth, centers };
         if (
@@ -188,11 +194,13 @@ function OrgTreeNode({
               )}
             </div>
 
-            {/* children row: NEVER wraps (flex-nowrap + w-max) so 3-across
-                stays 3-across on mobile — no 2+1 wrap. */}
+            {/* children row: NEVER wraps (grid-flow-col + w-max/min-w-max).
+                auto-cols-fr forces EQUAL cell widths, so the row center is
+                exactly the middle child's center — the parent drop, bar and
+                child drops all line up. */}
             <div
               ref={rowRef}
-              className="flex flex-nowrap items-start justify-center w-max min-w-max"
+              className="grid grid-flow-col auto-cols-fr items-start justify-center w-max min-w-max"
             >
               {data.children.map((child, i) => (
                 <div
