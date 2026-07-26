@@ -157,19 +157,106 @@ function OrgNode({
   );
 }
 
+const GRID = 24; // must match .dot-grid background-size
+const MIN_ZOOM = 0.4;
+const MAX_ZOOM = 2.5;
+const DRAG_THRESHOLD = 4; // px before a pointer-down becomes a pan
+
 export default function Home() {
   const [revealed, setRevealed] = React.useState(false);
+  const [view, setView] = React.useState({ x: 0, y: 0, zoom: 1 });
+  const [dragging, setDragging] = React.useState(false);
+
+  const viewportRef = React.useRef<HTMLElement | null>(null);
+  const viewRef = React.useRef(view);
+  viewRef.current = view;
+
+  // Wheel zoom (non-passive so we can prevent page scroll)
+  React.useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setView((v) => {
+        const next = Math.min(
+          MAX_ZOOM,
+          Math.max(MIN_ZOOM, v.zoom * Math.exp(-e.deltaY * 0.0015))
+        );
+        return { ...v, zoom: next };
+      });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // Click-drag panning (window listeners so the root button click still works)
+  const onPointerDown = React.useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const origin = { x: viewRef.current.x, y: viewRef.current.y };
+    let started = false;
+
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!started && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      if (!started) {
+        started = true;
+        setDragging(true);
+      }
+      setView((v) => ({ ...v, x: origin.x + dx, y: origin.y + dy }));
+    };
+    const onUp = () => {
+      setDragging(false);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, []);
+
+  // Dot grid slides with pan (modulo one grid period) but NEVER scales with zoom
+  const bgX = ((view.x % GRID) + GRID) % GRID;
+  const bgY = ((view.y % GRID) + GRID) % GRID;
 
   return (
-    <main className="relative min-h-screen dot-grid">
-      <section className="mx-auto max-w-6xl px-6 py-16">
-        <h1 className="text-center text-3xl font-bold tracking-tight text-zinc-900">
-          Organization
-        </h1>
-        <div className="mt-12 flex justify-center">
-          <OrgNode data={TREE[0]} revealed={revealed} onReveal={() => setRevealed(true)} />
-        </div>
-      </section>
+    <main
+      ref={viewportRef}
+      onPointerDown={onPointerDown}
+      className={`relative h-screen w-screen overflow-hidden select-none ${
+        dragging ? 'cursor-grabbing' : 'cursor-grab'
+      }`}
+      style={{ touchAction: 'none' }}
+    >
+      {/* Fixed-size dot-grid background: translates with pan, never scales */}
+      <div
+        aria-hidden="true"
+        className="dot-grid absolute -inset-8 pointer-events-none"
+        style={{
+          transform: `translate3d(${bgX}px, ${bgY}px, 0)`,
+          willChange: 'transform',
+        }}
+      />
+
+      {/* Zoom/pan content wrapper — transforms apply here, not to the background */}
+      <div
+        className="relative h-full w-full"
+        style={{
+          transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.zoom})`,
+          transformOrigin: '50% 50%',
+          willChange: 'transform',
+        }}
+      >
+        <section className="mx-auto max-w-6xl px-6 py-16">
+          <h1 className="text-center text-3xl font-bold tracking-tight text-zinc-900">
+            Organization
+          </h1>
+          <div className="mt-12 flex justify-center">
+            <OrgNode data={TREE[0]} revealed={revealed} onReveal={() => setRevealed(true)} />
+          </div>
+        </section>
+      </div>
     </main>
   );
 }
