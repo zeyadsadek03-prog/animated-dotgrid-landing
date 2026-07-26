@@ -217,13 +217,21 @@ function OrgTreeNode({
         </div>
       </motion.div>
 
-      <AnimatePresence>
+      {/* mode="popLayout": when this node COLLAPSES, its children block pops
+          out of layout flow IMMEDIATELY (instead of lingering in-flow while
+          fading for 0.35s then unmounting in one frame). That lets the parent
+          cell — and every ancestor connector that tracks it via `layout` + the
+          rAF ResizeObserver — reflow GRADUALLY on collapse, the same way they
+          already do on expand. Exiting nodes are positioned absolutely at their
+          last spot, so they still fade in place (opacity only, no translate). */}
+      <AnimatePresence mode="popLayout">
         {hasChildren && isOpen && (
           <motion.div
+            layout
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.35 }}
+            transition={{ duration: 0.35, layout: { duration: 0.4, ease: 'easeInOut' } }}
             className="mt-8 flex flex-col items-center"
           >
             {/* Connector canvas: the parent drop + horizontal bar + every
