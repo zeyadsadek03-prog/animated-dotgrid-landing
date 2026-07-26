@@ -15,31 +15,18 @@ const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 2.5;
 const PAN_BOUND_X = 480;
 const PAN_BOUND_Y = 360;
-const FIT_MARGIN = 24; // px breathing room around the tree when auto-fitting
+const FIT_MARGIN = 24; // px breathing room around the framed subtree
+const CAM_TOP_MARGIN = 80; // comfortable top margin when framing a subtree
 
-// Below this viewport width we render the indented accordion instead of the
-// spatial zoom/pan tree.
-const MOBILE_MAX_WIDTH = 640;
-
-/**
- * Media-query hook (matchMedia). Returns whether `query` currently matches and
- * stays in sync via the change event. SSR-safe: defaults to false on the server
- * and reconciles on mount.
- */
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = React.useState(false);
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mql = window.matchMedia(query);
-    const update = () => setMatches(mql.matches);
-    update();
-    mql.addEventListener('change', update);
-    return () => mql.removeEventListener('change', update);
-  }, [query]);
-
-  return matches;
-}
+// Parent lookup for the drill-down camera: collapsing a node pulls the view
+// back up to frame its PARENT's subtree.
+const PARENT_OF = new Map<string, string>();
+(function indexParents(node: OrgNode) {
+  node.children.forEach((child) => {
+    PARENT_OF.set(child.id, node.id);
+    indexParents(child);
+  });
+})(ORG_TREE);
 
 function UserIcon({ className }: { className?: string }) {
   return (
@@ -71,15 +58,21 @@ const CONNECTOR_H = DROP_TOP + DROP_CHILD;
  * so it renders as one coherent stroke. Child x-centers are measured from
  * layout (offsetLeft/offsetWidth — immune to the zoom transform) and kept
  * fresh with a ResizeObserver, so drops always land exactly on each child.
+ *
+ * The outermost div of every node is registered by id: its layout size
+ * (offsetWidth/offsetHeight) equals the node PLUS all currently-open
+ * descendants, which is exactly what the drill-down camera needs to frame.
  */
 function OrgTreeNode({
   data,
   expanded,
   onToggle,
+  registerNode,
 }: {
   data: OrgNode;
   expanded: Set<string>;
   onToggle: (id: string) => void;
+  registerNode: (id: string, el: HTMLElement | null) => void;
 }) {
   const hasChildren = data.children.length > 0;
   const isOpen = expanded.has(data.id);
@@ -154,7 +147,12 @@ function OrgTreeNode({
   }, [geo]);
 
   return (
-    <div className="flex flex-col items-center">
+    <div
+      ref={(el) => {
+        registerNode(data.id, el);
+      }}
+      className="flex flex-col items-center"
+    >
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -245,101 +243,16 @@ function OrgTreeNode({
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.45, delay: 0.55 + i * 0.08 }}
                   >
-                    <OrgTreeNode data={child} expanded={expanded} onToggle={onToggle} />
+                    <OrgTreeNode
+                      data={child}
+                      expanded={expanded}
+                      onToggle={onToggle}
+                      registerNode={registerNode}
+                    />
                   </motion.div>
                 </div>
               ))}
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-/**
- * Mobile accordion node. Renders the SAME OrgNode data and reads/writes the
- * SAME shared `expanded` Set as the desktop tree, so per-node collapse state is
- * consistent across both layouts. Compact tappable row: dashed avatar + blue
- * name pill; children indent under the parent and fade in place on expand.
- */
-function OrgAccordionNode({
-  data,
-  depth,
-  expanded,
-  onToggle,
-}: {
-  data: OrgNode;
-  depth: number;
-  expanded: Set<string>;
-  onToggle: (id: string) => void;
-}) {
-  const hasChildren = data.children.length > 0;
-  const isOpen = expanded.has(data.id);
-
-  return (
-    <div className="flex flex-col">
-      <button
-        type="button"
-        onClick={() => hasChildren && onToggle(data.id)}
-        style={{ paddingLeft: depth * 20 }}
-        className={`flex w-full items-center gap-3 py-2 text-left ${
-          hasChildren ? 'cursor-pointer' : 'cursor-default'
-        }`}
-        aria-label={`${data.name}${
-          hasChildren ? (isOpen ? ', tap to collapse' : ', tap to expand') : ''
-        }`}
-        aria-expanded={hasChildren ? isOpen : undefined}
-      >
-        {/* caret / spacer keeps rows aligned */}
-        <span className="w-4 shrink-0 text-blue-600">
-          {hasChildren && (
-            <motion.svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              className="h-4 w-4"
-              animate={{ rotate: isOpen ? 90 : 0 }}
-              transition={{ duration: 0.2 }}
-              aria-hidden="true"
-            >
-              <path d="M9 6l6 6-6 6" />
-            </motion.svg>
-          )}
-        </span>
-
-        {/* dashed avatar (compact) */}
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-blue-500 bg-white">
-          <UserIcon className="h-5 w-5 text-blue-600" />
-        </span>
-
-        {/* blue name pill */}
-        <span className="rounded-full bg-blue-600 px-4 py-1.5">
-          <span className="text-sm font-extrabold uppercase tracking-wide text-white">
-            {data.name}
-          </span>
-        </span>
-      </button>
-
-      <AnimatePresence initial={false}>
-        {hasChildren && isOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="overflow-hidden"
-          >
-            {data.children.map((child) => (
-              <OrgAccordionNode
-                key={child.id}
-                data={child}
-                depth={depth + 1}
-                expanded={expanded}
-                onToggle={onToggle}
-              />
-            ))}
           </motion.div>
         )}
       </AnimatePresence>
@@ -353,17 +266,38 @@ const clampValue = (value: number, min: number, max: number) =>
 export default function Home() {
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
 
+  // Last toggle action drives the drill-down camera: expanding frames the
+  // toggled node's subtree, collapsing pulls back to its parent's subtree.
+  const lastAction = React.useRef<{
+    id: string;
+    type: 'expand' | 'collapse';
+  } | null>(null);
+
   const toggle = React.useCallback((id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+        lastAction.current = { id, type: 'collapse' };
+      } else {
+        next.add(id);
+        lastAction.current = { id, type: 'expand' };
+      }
       return next;
     });
   }, []);
 
-  // Narrow viewport -> indented accordion; wide -> spatial zoom/pan tree.
-  const isMobile = useMediaQuery(`(max-width: ${MOBILE_MAX_WIDTH}px)`);
+  // Per-node subtree elements (outermost div of each OrgTreeNode), keyed by
+  // id. offsetWidth/offsetHeight of these give UNSCALED layout size of the
+  // node + all open descendants — the measurement space for the camera.
+  const nodeEls = React.useRef<Map<string, HTMLElement>>(new Map());
+  const registerNode = React.useCallback(
+    (id: string, el: HTMLElement | null) => {
+      if (el) nodeEls.current.set(id, el);
+      else nodeEls.current.delete(id);
+    },
+    [],
+  );
 
   // Shared pan offset: drives BOTH the chart translate and the dot-grid
   // background-position, so dots shift with the drag but never change size.
@@ -372,6 +306,7 @@ export default function Home() {
   const scale = useMotionValue(1);
   const dotPosition = useMotionTemplate`${panX}px ${panY}px`;
 
+  const stageRef = React.useRef<HTMLElement>(null);
   const chartRef = React.useRef<HTMLDivElement>(null);
   const pinchDist = React.useRef<number | null>(null);
 
@@ -416,74 +351,97 @@ export default function Home() {
     if (e.touches.length < 2) pinchDist.current = null;
   };
 
-  // --- Auto-fit / reset on root reveal-collapse ------------------------------
-  const rootOpen = expanded.has(ORG_TREE.id);
+  // --- Scoped drill-down camera ----------------------------------------------
+  // On EXPAND: frame the toggled node's subtree (node + all open descendants).
+  // On COLLAPSE: frame the toggled node's PARENT subtree (pull back one level);
+  // collapsing the root resets to the default view. All fit math happens in
+  // UNSCALED layout space (offsetWidth/offsetHeight + offsetParent chain up to
+  // the zoom stage), then scale/panX/panY are animated. transformOrigin is
+  // 'top center', so for a target scale s a layout point q maps to screen
+  // O + pan + s*(q - O) with O = (stageWidth/2, 0).
   const expandedKey = Array.from(expanded).sort().join(',');
 
   React.useEffect(() => {
-    // Auto-fit only applies to the spatial tree (desktop/tablet).
-    if (isMobile) return;
+    const action = lastAction.current;
+    if (!action) return;
 
-    const fitOptions = { duration: 0.55, ease: 'easeInOut' as const };
+    const camOptions = { duration: 0.55, ease: 'easeInOut' as const };
 
-    if (!rootOpen) {
-      // Collapsed: smoothly reset to the default view.
-      animate(scale, 1, fitOptions);
-      animate(panX, 0, fitOptions);
-      animate(panY, 0, fitOptions);
+    const targetId =
+      action.type === 'expand' ? action.id : PARENT_OF.get(action.id) ?? null;
+
+    if (targetId === null) {
+      // Root collapsed: smoothly reset to the default view.
+      animate(scale, 1, camOptions);
+      animate(panX, 0, camOptions);
+      animate(panY, 0, camOptions);
       return;
     }
 
-    // Root revealed/expanded: measure the (untransformed) tree and, if it
-    // overflows the viewport, smoothly zoom out so the whole tree fits.
-    const raf = requestAnimationFrame(() => {
-      const el = chartRef.current;
-      if (!el) return;
+    const frame = () => {
+      const el = nodeEls.current.get(targetId);
+      const stage = stageRef.current;
+      if (!el || !stage) return;
+
+      // Layout-space position of the subtree relative to the zoom stage
+      // (sum offsetLeft/offsetTop up the offsetParent chain — unaffected by
+      // the stage's scale transform).
+      let ex = 0;
+      let ey = 0;
+      let cur: HTMLElement | null = el;
+      while (cur && cur !== stage) {
+        ex += cur.offsetLeft;
+        ey += cur.offsetTop;
+        cur = cur.offsetParent as HTMLElement | null;
+      }
+
       const w = el.offsetWidth;
       const h = el.offsetHeight;
-      const vw = window.innerWidth - FIT_MARGIN * 2;
-      const vh = window.innerHeight - FIT_MARGIN * 2;
       if (w <= 0 || h <= 0) return;
-      const fit = Math.min(vw / w, vh / h, 1);
-      const target = clampValue(fit, MIN_ZOOM, MAX_ZOOM);
-      animate(scale, target, fitOptions);
-      animate(panX, 0, fitOptions);
-      animate(panY, 0, fitOptions);
-    });
-    return () => cancelAnimationFrame(raf);
+
+      const vw = document.documentElement.clientWidth;
+      const vh = document.documentElement.clientHeight;
+
+      // Fit the subtree into the viewport; never below MIN_ZOOM so names
+      // stay readable, never above 1 on a plain fit.
+      const s = clampValue(
+        Math.min(
+          (vw - FIT_MARGIN * 2) / w,
+          (vh - CAM_TOP_MARGIN - FIT_MARGIN) / h,
+          1,
+        ),
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
+
+      // Center horizontally, put the subtree top at CAM_TOP_MARGIN.
+      const stageW = stage.offsetWidth;
+      const tx = clampPan(
+        vw / 2 - stageW / 2 - s * (ex + w / 2 - stageW / 2),
+        PAN_BOUND_X,
+      );
+      const ty = clampPan(CAM_TOP_MARGIN - s * ey, PAN_BOUND_Y);
+
+      animate(scale, s, camOptions);
+      animate(panX, tx, camOptions);
+      animate(panY, ty, camOptions);
+    };
+
+    if (action.type === 'expand') {
+      // Children mount synchronously; measure on the next frame.
+      const raf = requestAnimationFrame(frame);
+      return () => cancelAnimationFrame(raf);
+    }
+    // Collapse: wait for the exit fade (0.35s) so the departing children are
+    // out of the DOM and don't inflate the parent-subtree measurement.
+    const timer = setTimeout(frame, 420);
+    return () => clearTimeout(timer);
     // Re-run whenever the set of expanded nodes changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rootOpen, expandedKey, isMobile]);
+  }, [expandedKey]);
 
-  // --- MOBILE: indented collapsible accordion -------------------------------
-  // Native vertical scroll, readable size, no zoom/pan. Reads the SAME
-  // ORG_TREE + shared `expanded` Set as the desktop tree.
-  if (isMobile) {
-    return (
-      <main className="relative min-h-screen overflow-x-hidden">
-        {/* Fixed dot-grid layer: constant dot size/spacing, never scales. */}
-        <div
-          aria-hidden="true"
-          className="dot-grid pointer-events-none fixed inset-0"
-        />
-        <section className="relative px-4 py-10">
-          <h1 className="text-center text-2xl font-bold tracking-tight text-zinc-900">
-            Organization
-          </h1>
-          <div className="mx-auto mt-8 max-w-md">
-            <OrgAccordionNode
-              data={ORG_TREE}
-              depth={0}
-              expanded={expanded}
-              onToggle={toggle}
-            />
-          </div>
-        </section>
-      </main>
-    );
-  }
-
-  // --- DESKTOP / TABLET: spatial zoom/pan tree (unchanged behavior) ---------
+  // ONE tree everywhere: the same recursive zoom/pan tree renders on every
+  // viewport. On mobile the pinch-zoom + drag-pan handlers above apply.
   return (
     <motion.main
       className="relative min-h-screen overflow-hidden touch-none cursor-grab active:cursor-grabbing"
@@ -509,6 +467,7 @@ export default function Home() {
 
       {/* Zoom/pan stage: scales with zoom, translates with pan. */}
       <motion.section
+        ref={stageRef}
         className="relative px-6 py-16"
         style={{ x: panX, y: panY, scale, transformOrigin: 'top center' }}
       >
@@ -517,7 +476,12 @@ export default function Home() {
         </h1>
         <div className="mt-12 flex justify-center">
           <div ref={chartRef} className="w-max min-w-max">
-            <OrgTreeNode data={ORG_TREE} expanded={expanded} onToggle={toggle} />
+            <OrgTreeNode
+              data={ORG_TREE}
+              expanded={expanded}
+              onToggle={toggle}
+              registerNode={registerNode}
+            />
           </div>
         </div>
       </motion.section>
