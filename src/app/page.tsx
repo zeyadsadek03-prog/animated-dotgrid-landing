@@ -22,8 +22,9 @@ const CAM_TOP_MARGIN = 80; // comfortable top margin when framing a subtree
 // COLLAPSE SEQUENCING: the children/connector exit fade (0.35s, opacity-only)
 // must fully finish IN PLACE before the drill-down camera reverses. Starting
 // the camera pan/zoom while children are mid-fade makes the camera motion
-// carry them (~70px downward slide = clunky). 420ms > 350ms fade + margin.
-const COLLAPSE_CAM_DELAY = 420;
+// carry them (~59px slide = clunky). A setTimeout gate is fragile (the timer
+// and the fade drift out of phase), so instead the camera reverse is anchored
+// to the ACTUAL fade completion via AnimatePresence's onExitComplete callback.
 
 // Parent lookup for the drill-down camera: collapsing a node pulls the view
 // back up to frame its PARENT's subtree.
@@ -75,11 +76,13 @@ function OrgTreeNode({
   expanded,
   onToggle,
   registerNode,
+  onCollapseComplete,
 }: {
   data: OrgNode;
   expanded: Set<string>;
   onToggle: (id: string) => void;
   registerNode: (id: string, el: HTMLElement | null) => void;
+  onCollapseComplete: (id: string) => void;
 }) {
   const hasChildren = data.children.length > 0;
   const isOpen = expanded.has(data.id);
@@ -242,7 +245,10 @@ function OrgTreeNode({
         </div>
       </motion.div>
 
-      <AnimatePresence mode="popLayout">
+      <AnimatePresence
+        mode="popLayout"
+        onExitComplete={() => onCollapseComplete(data.id)}
+      >
         {hasChildren && isOpen && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -311,6 +317,7 @@ function OrgTreeNode({
                       expanded={expanded}
                       onToggle={onToggle}
                       registerNode={registerNode}
+                      onCollapseComplete={onCollapseComplete}
                     />
                   </motion.div>
                 </motion.div>
@@ -348,6 +355,21 @@ export default function Home() {
       }
       return next;
     });
+  }, []);
+
+  // Pending camera reverse, anchored to the ACTUAL children exit fade
+  // completing (AnimatePresence onExitComplete) rather than a fragile timer.
+  // onCollapseComplete stashes the collapsed node id and bumps a tick that a
+  // useEffect below watches — guaranteeing the camera cannot start reversing
+  // until the fade is truly done.
+  const pendingCamTarget = React.useRef<string | null>(null);
+  const [camReverseTick, setCamReverseTick] = React.useState(0);
+
+  const onCollapseComplete = React.useCallback((id: string) => {
+    const action = lastAction.current;
+    if (!action || action.type !== 'collapse' || action.id !== id) return;
+    pendingCamTarget.current = id;
+    setCamReverseTick((t) => t + 1);
   }, []);
 
   // Per-node subtree elements (outermost div of each OrgTreeNode), keyed by
@@ -424,31 +446,14 @@ export default function Home() {
   // O + pan + s*(q - O) with O = (stageWidth/2, 0).
   const expandedKey = Array.from(expanded).sort().join(',');
 
-  React.useEffect(() => {
-    const action = lastAction.current;
-    if (!action) return;
+  const camOptions = React.useMemo(
+    () => ({ duration: 0.55, ease: 'easeInOut' as const }),
+    [],
+  );
 
-    const camOptions = { duration: 0.55, ease: 'easeInOut' as const };
-
-    const targetId =
-      action.type === 'expand' ? action.id : PARENT_OF.get(action.id) ?? null;
-
-    if (targetId === null) {
-      // Root collapsed: smoothly reset to the default view — but ONLY after
-      // the children exit fade (0.35s) has finished. The camera reverse and
-      // the fade must be SEQUENCED, never simultaneous: if the stage started
-      // panning/zooming while the children were still fading, the camera
-      // motion would carry them (visible downward slide) instead of letting
-      // them fade out in place.
-      const timer = setTimeout(() => {
-        animate(scale, 1, camOptions);
-        animate(panX, 0, camOptions);
-        animate(panY, 0, camOptions);
-      }, COLLAPSE_CAM_DELAY);
-      return () => clearTimeout(timer);
-    }
-
-    const frame = () => {
+  // Frame a subtree by id (fit node + open descendants into the viewport).
+  const frameSubtree = React.useCallback(
+    (targetId: string) => {
       const el = nodeEls.current.get(targetId);
       const stage = stageRef.current;
       if (!el || !stage) return;
@@ -495,23 +500,45 @@ export default function Home() {
       animate(scale, s, camOptions);
       animate(panX, tx, camOptions);
       animate(panY, ty, camOptions);
-    };
+    },
+    [camOptions, panX, panY, scale],
+  );
 
-    if (action.type === 'expand') {
-      // Children mount synchronously; measure on the next frame.
-      const raf = requestAnimationFrame(frame);
-      return () => cancelAnimationFrame(raf);
-    }
-    // Collapse: SEQUENCE — hold the camera steady while the children +
-    // connector fade out in place (0.35s opacity-only exit), THEN reverse
-    // the camera to the parent framing. Waiting also ensures the departing
-    // children are out of the DOM and don't inflate the parent-subtree
-    // measurement.
-    const timer = setTimeout(frame, COLLAPSE_CAM_DELAY);
-    return () => clearTimeout(timer);
-    // Re-run whenever the set of expanded nodes changes.
+  // EXPAND camera: frame the toggled node's subtree on the next frame (children
+  // mount synchronously). Runs immediately — expand is unchanged.
+  React.useEffect(() => {
+    const action = lastAction.current;
+    if (!action || action.type !== 'expand') return;
+    const raf = requestAnimationFrame(() => frameSubtree(action.id));
+    return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedKey]);
+
+  // COLLAPSE camera reverse: ANCHORED to the children exit fade completing
+  // (onCollapseComplete -> camReverseTick), never a timer. Because this only
+  // fires AFTER AnimatePresence reports the 0.35s opacity exit finished, the
+  // camera motion values (scale/panX/panY) stay perfectly constant while the
+  // children fade — no slide — then reverse one level: to the collapsed node's
+  // PARENT subtree, or the default view when the root collapsed.
+  React.useEffect(() => {
+    if (camReverseTick === 0) return;
+    const collapsedId = pendingCamTarget.current;
+    if (collapsedId === null) return;
+    pendingCamTarget.current = null;
+
+    const parentId = PARENT_OF.get(collapsedId) ?? null;
+    if (parentId === null) {
+      // Root collapsed: reset to the default view.
+      animate(scale, 1, camOptions);
+      animate(panX, 0, camOptions);
+      animate(panY, 0, camOptions);
+      return;
+    }
+    // Nested: fit the collapsed node's parent subtree. Departing children are
+    // already unmounted, so the parent-subtree measurement is accurate.
+    frameSubtree(parentId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camReverseTick]);
 
   // ONE tree everywhere: the same recursive zoom/pan tree renders on every
   // viewport. On mobile the pinch-zoom + drag-pan handlers above apply.
@@ -563,6 +590,7 @@ export default function Home() {
                   expanded={expanded}
                   onToggle={toggle}
                   registerNode={registerNode}
+                  onCollapseComplete={onCollapseComplete}
                 />
               </LayoutGroup>
             </div>
