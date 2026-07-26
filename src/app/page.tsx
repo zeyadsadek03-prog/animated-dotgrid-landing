@@ -61,7 +61,7 @@ function OrgNode({
           type="button"
           onClick={onReveal}
           className="relative flex items-center justify-center w-24 h-24 rounded-full border-2 border-dashed border-blue-500 bg-white cursor-pointer"
-          aria-label={`${data.name}${isRoot && hasChildren && !revealed ? ', click to expand' : ''}`}
+          aria-label={`${data.name}${isRoot && hasChildren ? (revealed ? ', click to collapse' : ', click to expand') : ''}`}
         >
           <div className="text-blue-600">
             <UserIcon className="w-12 h-12" />
@@ -80,7 +80,7 @@ function OrgNode({
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            exit={{ opacity: 0, transition: { duration: 0.2, delay: 1.15 } }}
             transition={{ duration: 0.35 }}
             className="mt-8 flex flex-col items-center w-full"
           >
@@ -102,6 +102,7 @@ function OrgNode({
                 strokeLinecap="round"
                 initial={{ pathLength: 0 }}
                 animate={{ pathLength: 1 }}
+                exit={{ pathLength: 0, transition: { duration: 0.4, delay: 0.85, ease: 'easeInOut' } }}
                 transition={{ duration: 0.4, ease: 'easeInOut' }}
               />
             </svg>
@@ -114,6 +115,7 @@ function OrgNode({
                 className="absolute top-0 left-[14%] right-[14%] h-[2px] rounded-full bg-blue-600 origin-center"
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
+                exit={{ scaleX: 0, transition: { duration: 0.35, delay: 0.55, ease: 'easeInOut' } }}
                 transition={{ duration: 0.35, delay: 0.4, ease: 'easeInOut' }}
               />
 
@@ -137,12 +139,14 @@ function OrgNode({
                       strokeLinecap="round"
                       initial={{ pathLength: 0 }}
                       animate={{ pathLength: 1 }}
+                      exit={{ pathLength: 0, transition: { duration: 0.35, delay: 0.25, ease: 'easeInOut' } }}
                       transition={{ duration: 0.35, delay: 0.7, ease: 'easeInOut' }}
                     />
                   </svg>
                   <motion.div
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 12, transition: { duration: 0.3, delay: i * 0.05 } }}
                     transition={{ duration: 0.45, delay: 1.0 + i * 0.08 }}
                   >
                     <OrgNode data={child} revealed={true} onReveal={() => {}} />
@@ -253,7 +257,7 @@ export default function Home() {
             Organization
           </h1>
           <div className="mt-12 flex justify-center">
-            <OrgNode data={TREE[0]} revealed={revealed} onReveal={() => setRevealed(true)} />
+            <OrgNode data={TREE[0]} revealed={revealed} onReveal={() => setRevealed((r) => !r)} />
           </div>
         </section>
       </div>
