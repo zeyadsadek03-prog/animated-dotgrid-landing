@@ -84,18 +84,19 @@ function OrgNode({
             transition={{ duration: 0.35 }}
             className="mt-8 flex flex-col items-center w-full"
           >
+            {/* 1. vertical drop descending from the root node */}
             <svg
               aria-hidden="true"
               className="block overflow-visible"
               width="2"
-              height="40"
-              viewBox="0 0 2 40"
+              height="32"
+              viewBox="0 0 2 32"
             >
               <motion.line
                 x1="1"
                 y1="0"
                 x2="1"
-                y2="40"
+                y2="32"
                 stroke="#2563eb"
                 strokeWidth="2"
                 strokeLinecap="round"
@@ -105,28 +106,50 @@ function OrgNode({
               />
             </svg>
 
-            <motion.div
-              initial="hidden"
-              animate="visible"
-              variants={{
-                hidden: {},
-                visible: { transition: { staggerChildren: 0.08 } },
-              }}
-              className="flex flex-wrap items-start justify-center gap-x-10 gap-y-14 w-full max-w-4xl"
-            >
-              {data.children.map((child) => (
-                <motion.div
-                  key={child.id}
-                  variants={{
-                    hidden: { opacity: 0, y: 12 },
-                    visible: { opacity: 1, y: 0 },
-                  }}
-                  transition={{ duration: 0.45 }}
-                >
-                  <OrgNode data={child} revealed={true} onReveal={() => {}} />
-                </motion.div>
+            {/* children row + connector hierarchy */}
+            <div className="relative flex flex-wrap items-start justify-center gap-x-10 gap-y-14 w-fit mx-auto">
+              {/* 2. horizontal bar spanning the full width of the three children */}
+              <motion.div
+                aria-hidden="true"
+                className="absolute top-0 left-[14%] right-[14%] h-[2px] rounded-full bg-blue-600 origin-center"
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: 1 }}
+                transition={{ duration: 0.35, delay: 0.4, ease: 'easeInOut' }}
+              />
+
+              {data.children.map((child, i) => (
+                <div key={child.id} className="flex w-[140px] flex-col items-center">
+                  {/* 3. short vertical drop connecting the bar down to EACH child */}
+                  <svg
+                    aria-hidden="true"
+                    className="block overflow-visible"
+                    width="2"
+                    height="28"
+                    viewBox="0 0 2 28"
+                  >
+                    <motion.line
+                      x1="1"
+                      y1="0"
+                      x2="1"
+                      y2="28"
+                      stroke="#2563eb"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      initial={{ pathLength: 0 }}
+                      animate={{ pathLength: 1 }}
+                      transition={{ duration: 0.35, delay: 0.7, ease: 'easeInOut' }}
+                    />
+                  </svg>
+                  <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.45, delay: 1.0 + i * 0.08 }}
+                  >
+                    <OrgNode data={child} revealed={true} onReveal={() => {}} />
+                  </motion.div>
+                </div>
               ))}
-            </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
