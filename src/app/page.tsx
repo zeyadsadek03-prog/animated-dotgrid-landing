@@ -19,6 +19,12 @@ const PAN_BOUND_Y = 360;
 const FIT_MARGIN = 24; // px breathing room around the framed subtree
 const CAM_TOP_MARGIN = 80; // comfortable top margin when framing a subtree
 
+// COLLAPSE SEQUENCING: the children/connector exit fade (0.35s, opacity-only)
+// must fully finish IN PLACE before the drill-down camera reverses. Starting
+// the camera pan/zoom while children are mid-fade makes the camera motion
+// carry them (~70px downward slide = clunky). 420ms > 350ms fade + margin.
+const COLLAPSE_CAM_DELAY = 420;
+
 // Parent lookup for the drill-down camera: collapsing a node pulls the view
 // back up to frame its PARENT's subtree.
 const PARENT_OF = new Map<string, string>();
@@ -428,11 +434,18 @@ export default function Home() {
       action.type === 'expand' ? action.id : PARENT_OF.get(action.id) ?? null;
 
     if (targetId === null) {
-      // Root collapsed: smoothly reset to the default view.
-      animate(scale, 1, camOptions);
-      animate(panX, 0, camOptions);
-      animate(panY, 0, camOptions);
-      return;
+      // Root collapsed: smoothly reset to the default view — but ONLY after
+      // the children exit fade (0.35s) has finished. The camera reverse and
+      // the fade must be SEQUENCED, never simultaneous: if the stage started
+      // panning/zooming while the children were still fading, the camera
+      // motion would carry them (visible downward slide) instead of letting
+      // them fade out in place.
+      const timer = setTimeout(() => {
+        animate(scale, 1, camOptions);
+        animate(panX, 0, camOptions);
+        animate(panY, 0, camOptions);
+      }, COLLAPSE_CAM_DELAY);
+      return () => clearTimeout(timer);
     }
 
     const frame = () => {
@@ -489,9 +502,12 @@ export default function Home() {
       const raf = requestAnimationFrame(frame);
       return () => cancelAnimationFrame(raf);
     }
-    // Collapse: wait for the exit fade (0.35s) so the departing children are
-    // out of the DOM and don't inflate the parent-subtree measurement.
-    const timer = setTimeout(frame, 420);
+    // Collapse: SEQUENCE — hold the camera steady while the children +
+    // connector fade out in place (0.35s opacity-only exit), THEN reverse
+    // the camera to the parent framing. Waiting also ensures the departing
+    // children are out of the DOM and don't inflate the parent-subtree
+    // measurement.
+    const timer = setTimeout(frame, COLLAPSE_CAM_DELAY);
     return () => clearTimeout(timer);
     // Re-run whenever the set of expanded nodes changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
