@@ -160,6 +160,25 @@ function OrgTreeNode({
     };
   }, [isOpen, hasChildren, data.children.length]);
 
+  // Connector draw-on SEQUENCING flag. On expand the node layout reflow
+  // (0.4s) + drill-down camera pan (0.55s) move the whole subtree; if the
+  // pathLength draw ran during that window the line would "draw in" over
+  // sliding geometry (slippery, worst on a nested/middle parent). So we keep
+  // the connector invisible (pathLength 0) until the reflow/camera window has
+  // essentially settled, THEN draw it cleanly onto the now-placed avatars.
+  // The per-row rAF geo tracking still runs the whole time, so the path `d`
+  // is already final by the time we draw. Reset to false whenever the row
+  // closes so the next open re-sequences from scratch.
+  const [drawn, setDrawn] = React.useState(false);
+  React.useEffect(() => {
+    if (!isOpen || !hasChildren) {
+      setDrawn(false);
+      return;
+    }
+    const t = setTimeout(() => setDrawn(true), 560);
+    return () => clearTimeout(t);
+  }, [isOpen, hasChildren]);
+
   // Single unified connector path: parent drop, then the horizontal bar
   // (first child center -> last child center), then a drop into EACH child.
   const connectorPath = React.useMemo(() => {
@@ -249,8 +268,9 @@ function OrgTreeNode({
                     strokeWidth="2"
                     strokeLinecap="round"
                     initial={{ pathLength: 0 }}
-                    animate={{ pathLength: 1 }}
-                    transition={{ duration: 0.7, ease: 'easeInOut' }}
+                    animate={{ pathLength: drawn ? 1 : 0 }}
+                    exit={{ pathLength: 0 }}
+                    transition={{ duration: 0.35, ease: 'easeInOut' }}
                   />
                 </svg>
               )}
