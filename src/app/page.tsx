@@ -1,7 +1,16 @@
 'use client';
 
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import {
+  motion,
+  AnimatePresence,
+  useMotionValue,
+  useMotionTemplate,
+} from 'framer-motion';
+
+// Clamp bounds so the chart can be pulled around but never lost far off-screen.
+const PAN_BOUND_X = 480;
+const PAN_BOUND_Y = 360;
 
 interface OrgNodeData {
   id: string;
@@ -160,16 +169,42 @@ function OrgNode({
 export default function Home() {
   const [revealed, setRevealed] = React.useState(false);
 
+  // Shared pan offset: drives BOTH the chart translate and the dot-grid
+  // background-position, so dots shift with the drag but never change size.
+  const panX = useMotionValue(0);
+  const panY = useMotionValue(0);
+  const dotPosition = useMotionTemplate`${panX}px ${panY}px`;
+
+  const clamp = (value: number, bound: number) =>
+    Math.min(bound, Math.max(-bound, value));
+
   return (
-    <main className="relative min-h-screen dot-grid">
-      <section className="mx-auto max-w-6xl px-6 py-16">
+    <motion.main
+      className="relative min-h-screen overflow-hidden touch-none cursor-grab active:cursor-grabbing"
+      onPan={(_event, info) => {
+        panX.set(clamp(panX.get() + info.delta.x, PAN_BOUND_X));
+        panY.set(clamp(panY.get() + info.delta.y, PAN_BOUND_Y));
+      }}
+    >
+      {/* Fixed dot-grid layer: constant dot size/spacing (24px), only the
+          background-position translates with the pan offset. No zoom ever. */}
+      <motion.div
+        aria-hidden="true"
+        className="dot-grid pointer-events-none fixed inset-0"
+        style={{ backgroundPosition: dotPosition }}
+      />
+
+      <motion.section
+        className="relative mx-auto max-w-6xl px-6 py-16"
+        style={{ x: panX, y: panY }}
+      >
         <h1 className="text-center text-3xl font-bold tracking-tight text-zinc-900">
           Organization
         </h1>
         <div className="mt-12 flex justify-center">
           <OrgNode data={TREE[0]} revealed={revealed} onReveal={() => setRevealed((prev) => !prev)} />
         </div>
-      </section>
-    </main>
+      </motion.section>
+    </motion.main>
   );
 }
