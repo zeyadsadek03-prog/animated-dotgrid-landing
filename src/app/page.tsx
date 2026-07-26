@@ -167,7 +167,7 @@ export default function Home() {
           Organization
         </h1>
         <div className="mt-12 flex justify-center">
-          <OrgNode data={TREE[0]} revealed={revealed} onReveal={() => setRevealed(true)} />
+          <OrgNode data={TREE[0]} revealed={revealed} onReveal={() => setRevealed((prev) => !prev)} />
         </div>
       </section>
     </main>
