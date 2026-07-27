@@ -7,32 +7,32 @@ export interface OrgNode {
 
 export const ORG_TREE: OrgNode = {
   id: 'root',
-  name: 'Idris',
+  name: 'Aaron',
   children: [
     {
       id: 'c1',
-      name: 'Osama',
+      name: 'Brian',
       children: [
-        { id: 'osama-karim', name: 'Karim', children: [] },
-        { id: 'osama-momen', name: 'Momen', children: [] },
+        { id: 'osama-karim', name: 'Cody', children: [] },
+        { id: 'osama-momen', name: 'Derek', children: [] },
       ],
     },
     {
       id: 'c2',
-      name: 'Nessrin',
+      name: 'Elena',
       children: [
-        { id: 'nessrin-faisal', name: 'Faisal', children: [] },
-        { id: 'nessrin-adham', name: 'Adham', children: [] },
-        { id: 'nessrin-bassam', name: 'Bassam', children: [] },
+        { id: 'nessrin-faisal', name: 'Felix', children: [] },
+        { id: 'nessrin-adham', name: 'Grace', children: [] },
+        { id: 'nessrin-bassam', name: 'Hugo', children: [] },
       ],
     },
     {
       id: 'c3',
-      name: 'Mohamed',
+      name: 'Iris',
       children: [
-        { id: 'mohamed-shahd', name: 'Shahd', children: [] },
-        { id: 'mohamed-zeyad', name: 'Zeyad', children: [] },
-        { id: 'mohamed-moaz', name: 'Moaz', children: [] },
+        { id: 'mohamed-shahd', name: 'Julia', children: [] },
+        { id: 'mohamed-zeyad', name: 'Kevin', children: [] },
+        { id: 'mohamed-moaz', name: 'Liam', children: [] },
       ],
     },
   ],
