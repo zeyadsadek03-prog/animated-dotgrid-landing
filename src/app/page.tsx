@@ -8,6 +8,7 @@ import {
   useMotionValue,
   useMotionTemplate,
   animate,
+  type MotionValue,
 } from 'framer-motion';
 import { ORG_TREE, type OrgNode } from './orgData';
 
@@ -77,12 +78,14 @@ function OrgTreeNode({
   onToggle,
   registerNode,
   onCollapseComplete,
+  cameraScale,
 }: {
   data: OrgNode;
   expanded: Set<string>;
   onToggle: (id: string) => void;
   registerNode: (id: string, el: HTMLElement | null) => void;
   onCollapseComplete: (id: string) => void;
+  cameraScale: MotionValue<number>;
 }) {
   const hasChildren = data.children.length > 0;
   const isOpen = expanded.has(data.id);
@@ -118,7 +121,13 @@ function OrgTreeNode({
       if (!row) return;
       const rowRect = row.getBoundingClientRect();
       const layoutWidth = row.offsetWidth;
-      const k = rowRect.width > 0 ? layoutWidth / rowRect.width : 1;
+      // The chart row is only scaled by the camera, so the exact layout->screen
+      // factor is 1/cameraScale. Using row.offsetWidth/rowRect.width here would
+      // spike for one frame during reflow (offsetWidth snaps to final while the
+      // screen rect glides), jumping the connector endpoint. 1/scale animates
+      // smoothly with the camera. offsetWidth is still used for the SVG canvas.
+      const cs = cameraScale.get();
+      const k = cs > 0 ? 1 / cs : 1;
       const centers = cellRefs.current
         .slice(0, data.children.length)
         .map((cell) => {
@@ -317,6 +326,7 @@ function OrgTreeNode({
                       onToggle={onToggle}
                       registerNode={registerNode}
                       onCollapseComplete={onCollapseComplete}
+                      cameraScale={cameraScale}
                     />
                   </motion.div>
                 </motion.div>
@@ -446,7 +456,7 @@ export default function Home() {
   const expandedKey = Array.from(expanded).sort().join(',');
 
   const camOptions = React.useMemo(
-    () => ({ duration: 0.55, ease: 'easeInOut' as const }),
+    () => ({ duration: 0.4, ease: 'easeInOut' as const }),
     [],
   );
 
@@ -590,6 +600,7 @@ export default function Home() {
                   onToggle={toggle}
                   registerNode={registerNode}
                   onCollapseComplete={onCollapseComplete}
+                  cameraScale={scale}
                 />
               </LayoutGroup>
             </div>
