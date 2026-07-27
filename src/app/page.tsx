@@ -143,8 +143,11 @@ function OrgTreeNode({
           prev.centers.length === next.centers.length &&
           prev.centers.every((c, i) => Math.abs(c - next.centers[i]) < 0.01)
         ) {
+          stableFrames.current += 1;
+          if (stableFrames.current >= 6 && !drawn) setDrawn(true);
           return prev;
         }
+        stableFrames.current = 0;
         return next;
       });
     };
@@ -188,14 +191,26 @@ function OrgTreeNode({
   // is already final by the time we draw. Reset to false whenever the row
   // closes so the next open re-sequences from scratch.
   const [drawn, setDrawn] = React.useState(false);
-  React.useEffect(() => {
+  const stableFrames = React.useRef(0);
+  const prevGeo = React.useRef<typeof geo>(null);
+  React.useLayoutEffect(() => {
     if (!isOpen || !hasChildren) {
       setDrawn(false);
+      stableFrames.current = 0;
+      prevGeo.current = null;
       return;
     }
-    const t = setTimeout(() => setDrawn(true), 560);
-    return () => clearTimeout(t);
-  }, [isOpen, hasChildren]);
+    if (!geo) return;
+    if (!prevGeo.current || prevGeo.current.width !== geo.width || prevGeo.current.centers.length !== geo.centers.length || prevGeo.current.centers.some((c, i) => Math.abs(c - geo.centers[i]) >= 0.01)) {
+      stableFrames.current = 0;
+    } else {
+      stableFrames.current += 1;
+      if (stableFrames.current >= 6 && !drawn) {
+        setDrawn(true);
+      }
+    }
+    prevGeo.current = geo;
+  }, [geo, isOpen, hasChildren, drawn]);
 
   // Single unified connector path: parent drop, then the horizontal bar
   // (first child center -> last child center), then a drop into EACH child.
@@ -609,4 +624,3 @@ export default function Home() {
     </motion.main>
   );
 }
-
