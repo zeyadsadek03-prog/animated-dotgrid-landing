@@ -193,11 +193,13 @@ function OrgTreeNode({
   const [drawn, setDrawn] = React.useState(false);
   const stableFrames = React.useRef(0);
   const prevGeo = React.useRef<typeof geo>(null);
+  const drawnGeo = React.useRef<typeof geo>(null);
   React.useLayoutEffect(() => {
     if (!isOpen || !hasChildren) {
       setDrawn(false);
       stableFrames.current = 0;
       prevGeo.current = null;
+      drawnGeo.current = null;
       return;
     }
     if (!geo) return;
@@ -207,6 +209,7 @@ function OrgTreeNode({
       stableFrames.current += 1;
       if (stableFrames.current >= 6 && !drawn) {
         setDrawn(true);
+        drawnGeo.current = geo;
       }
     }
     prevGeo.current = geo;
